@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: amazon_postgres
+    restart: always
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: .
+    container_name: amazon_backend
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+    command: npm run start:dev
+
+volumes:
+  postgres_data:
