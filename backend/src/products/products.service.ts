@@ -22,4 +22,8 @@ export class ProductsService {
     }
     return product;
   }
+
+  async deleteAll(): Promise<void> {
+    await this.productRepo.clear();
+  }
 }

@@ -25,74 +25,72 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
-## Project setup
+# Amazon Pipeline Dashboard — Backend (NestJS)
+
+This folder contains the backend API for the Amazon Pipeline Dashboard. It's a small NestJS application that scrapes product details and stores them in Postgres.
+
+## Quickstart
+
+Prerequisites:
+- Node.js >= 18
+- Docker & Docker Compose (recommended for local development)
+
+1) Copy environment variables
 
 ```bash
-$ npm install
+cd backend
+cp .env.example .env
+# then edit .env to set DB credentials and SCRAPINGBEE_API_KEY
 ```
 
-## Compile and run the project
+2) Start with Docker Compose (Postgres + backend)
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+docker-compose up --build -d
 ```
 
-## Run tests
+3) Trigger scraping (HTTP endpoint)
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+curl -X POST http://localhost:3000/products/scrape-by-asins
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+4) View products
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+curl http://localhost:3000/products
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Important notes
 
-## Resources
+- The app uses TypeORM with `synchronize: true` for convenience in development. For production use migrations instead.
+- The Postgres service uses a named Docker volume (`postgres_data`) so data persists across container restarts. Running `docker-compose down -v` will remove the DB volume and erase data.
+- The scraper uses ScrapingBee (set `SCRAPINGBEE_API_KEY` in your `.env`). If pages return empty content or prices are `0.0`, check the backend logs to see the scraped raw HTML or price parsing debug output.
 
-Check out a few resources that may come in handy when working with NestJS:
+## Local development without Docker
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+cd backend
+npm install
+npm run start:dev
+```
 
-## Support
+Then trigger the scraping endpoint as above.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## Helpful commands
 
-## Stay in touch
+- Rebuild containers: `docker-compose up --build -d`
+- Stop and remove containers (keep volumes): `docker-compose down`
+- Stop and remove containers + volumes (destroy DB): `docker-compose down -v`
+- Inspect Postgres container: `docker-compose exec postgres psql -U "$DB_USER" -d "$DB_NAME"`
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## Files of interest
+- `src/products/scraper.service.ts` — scraping logic and price parsing.
+- `src/products/product.entity.ts` — TypeORM entity for products.
+- `docker-compose.yml` — Postgres + backend configuration.
 
+If you want, I can add a sample `.env.example` to this folder or a short troubleshooting section. Let me know what you'd like included.
+
+---
+Edited to include project-specific usage and troubleshooting tips.
 ## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).

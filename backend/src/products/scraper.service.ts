@@ -35,26 +35,29 @@ export class ScraperService {
         const response = await axios.get('https://app.scrapingbee.com/api/v1/', {
           params: {
             api_key: process.env.SCRAPINGBEE_API_KEY,
-            url: url,
+            url,
             render_js: true,
+          },
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Accept-Language': 'en-US,en;q=0.9',
           },
         });
 
         const html = response.data;
         const $ = cheerio.load(html);
 
-  const title = $('#productTitle').text().trim();
-  const brand = $('#bylineInfo').text().trim() || $('a#bylineInfo').text().trim();
-  const category = $('a.a-link-normal.a-color-tertiary').first().text().trim();
-  const image_url = $('#landingImage').attr('src') || '';
+        const title = $('#productTitle').text().trim();
+        const brand = $('#bylineInfo').text().trim() || $('a#bylineInfo').text().trim();
+        const category = $('a.a-link-normal.a-color-tertiary').first().text().trim();
+        const image_url = $('#landingImage').attr('src') || '';
 
-  // Improved price extraction: try multiple selectors Amazon uses and normalize values
-  const { price, currency, rawPrice } = this.extractPrice($);
-  const availability = $('#availability span').text().trim() || 'Unknown';
-  const seller = $('#sellerProfileTriggerId').text().trim() || 'Amazon.com';
+        const { price, currency, rawPrice } = this.extractPrice($);
 
-  // Debug log to help diagnose empty/missing price strings
-  console.log(`Scraper: ASIN=${asin} priceRaw="${rawPrice}" parsedPrice=${price} currency=${currency}`);
+        const availability = $('#availability span').text().trim() || 'Unknown';
+        const seller = $('#sellerProfileTriggerId').text().trim() || 'Amazon.com';
+
+        console.log(`Scraper: ASIN=${asin} priceRaw="${rawPrice}" parsedPrice=${price} currency=${currency}`);
 
         if (title) {
           const product: ScrapedProduct = {
@@ -81,39 +84,144 @@ export class ScraperService {
     }
   }
 
-  // Extract price and currency using several common Amazon selectors and normalize the value
   private extractPrice($: any): { price: number; currency: string; rawPrice: string } {
-    const selectors = [
-      '#priceblock_ourprice',
-      '#priceblock_dealprice',
-      '#priceblock_saleprice',
-      '#price_inside_buybox',
-      'span.a-offscreen',
-      '.a-price .a-offscreen',
-    ];
-
     let priceString = '';
-    for (const sel of selectors) {
-      const txt = $(sel).first().text();
-      if (txt && txt.trim()) {
-        priceString = txt.trim();
-        break;
+    
+    // Try to find price in the main product section
+    let priceElement = $('.a-price .a-offscreen').first();
+    if (!priceElement || !priceElement.length) {
+      priceElement = $('span.a-price .a-offscreen').first();
+    }
+    if (priceElement && priceElement.length) {
+      priceString = priceElement.text().trim();
+      console.log('Found price with .a-price .a-offscreen:', priceString);
+    }
+
+    // Try additional selectors if still no price found
+    if (!priceString) {
+      const selectors = [
+        '#price_inside_buybox',
+        '#priceblock_ourprice',
+        '#priceblock_dealprice',
+        '#priceblock_saleprice',
+        'span.a-price[data-a-size="xl"] .a-offscreen',
+        '#corePrice_feature_div .a-offscreen',
+        '#newBuyBoxPrice',
+        '#usedBuyBoxPrice',
+      ];
+
+      for (const sel of selectors) {
+        const txt = $(sel).first().text();
+        if (txt && txt.trim()) {
+          const trimmed = txt.trim();
+          // Skip if it's a percentage, error message, or doesn't contain numbers
+          if (!trimmed.includes('%') && 
+              !trimmed.toLowerCase().includes('unavailable') && 
+              !trimmed.toLowerCase().includes('cannot be shipped') &&
+              /[0-9]/.test(trimmed)) {
+            priceString = trimmed;
+            console.log(`Found price with selector ${sel}:`, priceString);
+            break;
+          }
+        }
+      }
+      if (!priceString) {
+        console.log('No price found with any standard selector');
       }
     }
 
-    // normalize nbsp and trim
-    priceString = priceString.replace(/\u00A0/g, ' ').trim();
+    // Fallback: Check JSON-LD structured data
+    if (!priceString) {
+      const jsonLdScripts = $('script[type="application/ld+json"]');
+      for (let i = 0; i < jsonLdScripts.length; i++) {
+        try {
+          const data = JSON.parse($(jsonLdScripts[i]).html());
+          if (data.offers && data.offers.price) {
+            priceString = data.offers.priceCurrency
+              ? `${data.offers.price} ${data.offers.priceCurrency}`
+              : String(data.offers.price);
+            break;
+          }
+        } catch (e) {
+          // JSON parsing failed, try next script
+          continue;
+        }
+      }
+    }
 
-    // keep only digits, dot and comma for numeric part
-    const numericPart = (priceString || '').replace(/[^0-9.,]/g, '');
-    // convert commas to dots (basic normalization) and remove extra dots if any
-    const normalized = numericPart.replace(/,/g, '.');
-    const parsed = parseFloat(normalized);
-    const price = Number.isFinite(parsed) ? parsed : 0;
+    // Fallback: Check for price in JavaScript variables
+    if (!priceString) {
+      const scriptTexts = $('script').map((i, el) => $(el).html()).get();
+      const priceRegex = /['"]price['"]\s*[:=]\s*['"]([0-9.,]+)['"]/i;
+      for (const script of scriptTexts) {
+        const match = script.match(priceRegex);
+        if (match && match[1]) {
+          priceString = match[1];
+          break;
+        }
+      }
+    }
 
-    // currency: remove numbers, dots, commas and whitespace
-    const currency = (priceString || '').replace(/[0-9.,\s\u00A0]/g, '') || 'USD';
+    // Normalize the price string
+    priceString = priceString.replace(/\s+/g, '').replace(/\u00A0/g, '').trim();
+    
+    // Extract numeric value - handle different decimal and thousand separators
+    let numericValue = 0;
+    let currency = 'USD';
+    
+    // Detect currency from the string
+    if (priceString.includes('EUR')) currency = 'EUR';
+    else if (priceString.includes('GBP') || priceString.includes('£')) currency = 'GBP';
+    else if (priceString.includes('CAD')) currency = 'CAD';
+    else if (priceString.includes('BRL')) currency = 'BRL';
+    else if (priceString.includes('PLN')) currency = 'PLN';
+    else if (priceString.includes('$')) currency = 'USD';
+    
+    // Try to extract price with different formats
+    const priceMatch = priceString.match(/([\$\£\€]?)\s*([0-9]+[.,]?[0-9]*)/);
+    if (priceMatch) {
+      // Extract currency if present
+      if (priceMatch[1]) {
+        switch (priceMatch[1]) {
+          case '£': currency = 'GBP'; break;
+          case '€': currency = 'EUR'; break;
+          case '$': currency = 'USD'; break;
+        }
+      }
+      
+      // Handle different decimal/thousand separators
+      const numberStr = priceMatch[2].replace(/[^0-9.,]/g, '');
+      if (numberStr.includes(',') && numberStr.includes('.')) {
+        // Format like 1,234.56 (US) or 1.234,56 (EU)
+        const lastComma = numberStr.lastIndexOf(',');
+        const lastDot = numberStr.lastIndexOf('.');
+        if (lastComma > lastDot) {
+          // European format: 1.234,56 -> 1234.56
+          numericValue = parseFloat(numberStr.replace(/\./g, '').replace(',', '.'));
+        } else {
+          // US format: 1,234.56 -> 1234.56
+          numericValue = parseFloat(numberStr.replace(/,/g, ''));
+        }
+      } else if (numberStr.includes(',')) {
+        // Check if comma is decimal separator (EU) or thousands separator (US)
+        const parts = numberStr.split(',');
+        if (parts.length === 2 && parts[1].length <= 2) {
+          // Likely decimal: 12,99 -> 12.99
+          numericValue = parseFloat(numberStr.replace(',', '.'));
+        } else {
+          // Likely thousands: 1,234 -> 1234
+          numericValue = parseFloat(numberStr.replace(/,/g, ''));
+        }
+      } else {
+        // No comma or just a dot as decimal separator
+        numericValue = parseFloat(numberStr);
+      }
+    }
 
-    return { price, currency, rawPrice: priceString };
+    return { 
+      price: Number.isFinite(numericValue) ? numericValue : 0,
+      currency,
+      rawPrice: priceString || 'Not found'
+    };
   }
 }
