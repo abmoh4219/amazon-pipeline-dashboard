@@ -1,18 +1,38 @@
+# Render Blueprint for Amazon Pipeline Dashboard Backend
+# Docs: https://render.com/docs/blueprint-spec
+
 services:
+  # Main backend service
   - type: web
     name: amazon-backend
     env: node
-    buildCommand: npm install && npm run build
+    region: oregon  # Choose the region closest to your users
+    plan: free  # Start with free, upgrade as needed
+    
+    # Build and start commands
+    buildCommand: npm ci && npm run build
     startCommand: npm run start:prod
+    
+    # Environment variables
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DB_HOST
+        
+      # Database configuration (using Render's managed PostgreSQL)
+      - key: DATABASE_URL
         fromDatabase:
           name: amazon-postgres
           property: connectionString
+          
+      # Fallback database configuration (if not using DATABASE_URL)
+      - key: DB_HOST
+        fromDatabase:
+          name: amazon-postgres
+          property: host
       - key: DB_PORT
-        value: 5432
+        fromDatabase:
+          name: amazon-postgres
+          property: port
       - key: DB_USERNAME
         fromDatabase:
           name: amazon-postgres
@@ -25,9 +45,17 @@ services:
         fromDatabase:
           name: amazon-postgres
           property: database
+          
+      # Application settings
+      - key: PORT
+        value: 10000
+      - key: NODE_OPTIONS
+        value: '--max-old-space-size=1024'  # Adjust based on your needs
 
-databases:
-  - name: amazon-postgres
-    databaseName: ${DB_NAME}
-    user: ${DB_USER}
-    plan: free
+# Database service
+# Uncomment and configure this if you want Render to create a managed PostgreSQL database
+# databases:
+#   - name: amazon-postgres
+#     databaseName: amazon_dashboard
+#     user: admin
+#     plan: free  # Start with free, upgrade as needed
