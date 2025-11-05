@@ -13,11 +13,15 @@ export default function Overview() {
     const fetchProducts = async () => {
       try {
         const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-        const res = await fetch(`${API_URL}/products`);
+        const res = await fetch(`${API_URL}/api/products`);
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
         const data = await res.json();
-        setProducts(data);
+        setProducts(Array.isArray(data) ? data : []);
       } catch (e) {
-        console.error(e);
+        console.error('Error fetching products:', e);
+        setProducts([]);
       } finally {
         setLoading(false);
       }
@@ -26,21 +30,21 @@ export default function Overview() {
   }, []);
 
   const totalValue = useMemo(
-    () => products.reduce((sum, p) => sum + parseFloat(p.price || "0"), 0),
+    () => (Array.isArray(products) ? products.reduce((sum, p) => sum + parseFloat(p?.price || "0"), 0) : 0),
     [products]
   );
 
   const brands = useMemo(
-    () => Array.from(new Set(products.map((p) => p.brand).filter(Boolean))).length,
+    () => Array.isArray(products) ? Array.from(new Set(products.map((p) => p?.brand).filter(Boolean))).length : 0,
     [products]
   );
 
   const categories = useMemo(
-    () => Array.from(new Set(products.map((p) => p.category).filter(Boolean))).length,
+    () => Array.isArray(products) ? Array.from(new Set(products.map((p) => p?.category).filter(Boolean))).length : 0,
     [products]
   );
 
-  const recent = useMemo(() => products.slice(0, 8), [products]);
+  const recent = useMemo(() => Array.isArray(products) ? products.slice(0, 8) : [], [products]);
 
   if (loading) {
     return (

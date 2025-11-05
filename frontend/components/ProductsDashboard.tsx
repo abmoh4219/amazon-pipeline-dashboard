@@ -29,12 +29,18 @@ export default function ProductsDashboard() {
   const fetchProducts = async () => {
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const response = await fetch(`${API_URL}/products`);
+      const response = await fetch(`${API_URL}/api/products`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
-      setProducts(data);
-      setFilteredProducts(data);
+      const productsArray = Array.isArray(data) ? data : [];
+      setProducts(productsArray);
+      setFilteredProducts(productsArray);
     } catch (error) {
       console.error("Error fetching products:", error);
+      setProducts([]);
+      setFilteredProducts([]);
     } finally {
       setLoading(false);
     }
